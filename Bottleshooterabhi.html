@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Bottle Shooter Arcade</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Bangers&family=Roboto:wght@400;700&display=swap');
+
+        :root {
+            --wood-primary: #5d4037;
+            --wood-dark: #3e2723;
+            --ui-bg: rgba(0, 0, 0, 0.7);
+            --accent: #ffeb3b;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #222;
+            font-family: 'Roboto', sans-serif;
+            touch-action: none; /* Prevent zoom/scroll on mobile */
+            cursor: none; /* Hide default cursor */
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* UI Overlay */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        /* HUD */
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px;
+            font-family: 'Bangers', cursive;
+            color: white;
+            font-size: 2rem;
+            text-shadow: 2px 2px 0 #000;
+        }
+
+        .score-box span { color: var(--accent); }
+        .lives-box span { color: #ff5252; }
+
+        .hud-bottom {
+            padding: 20px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: flex-end;
+        }
+
+        /* Ammo Indicator */
+        .ammo-container {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .bullet {
+            width: 15px;
+            height: 35px;
+            background: #ffd700;
+            border: 1px solid #b8860b;
+            border-radius: 4px 4px 0 0;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
+            transition: opacity 0.1s;
+        }
+        
+        .bullet.spent {
+            opacity: 0.2;
+            background: #555;
+            border-color: #333;
+        }
+
+        .reload-msg {
+            position: absolute;
+            bottom: 80px;
+            right: 20px;
+            color: #ff5252;
+            font-family: 'Bangers', cursive;
+            font-size: 1.5rem;
+            text-transform: uppercase;
+            animation: blink 0.5s infinite;
+            display: none;
+        }
+
+        /* Menu Screens */
+        .screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+            cursor: default;
+            z-index: 10;
+        }
+
+        h1 {
+            font-family: 'Bangers', cursive;
+            font-size: 4rem;
+            color: var(--accent);
+            text-shadow: 4px 4px 0 #d32f2f;
+            margin: 0 0 20px 0;
+            letter-spacing: 2px;
+            text-align: center;
+        }
+
+        p {
+            color: #ccc;
+            font-size: 1.2rem;
+            max-width: 600px;
+            text-align: center;
+            margin-bottom: 40px;
+            line-height: 1.6;
+        }
+
+        button {
+            padding: 15px 40px;
+            font-family: 'Bangers', cursive;
+            font-size: 2rem;
+            color: white;
+            background: #d32f2f;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 6px 0 #b71c1c;
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+
+        button:active {
+            transform: translateY(4px);
+            box-shadow: 0 2px 0 #b71c1c;
+        }
+
+        button:hover {
+            background: #f44336;
+        }
+
+        /* Animations */
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        .hidden { display: none !important; }
+
+        /* Custom Cursor for Game Area */
+        #cursor-layer {
+            position: absolute;
+            pointer-events: none;
+            width: 40px;
+            height: 40px;
+            transform: translate(-50%, -50%);
+            z-index: 5;
+            display: none; /* Hidden on touch devices mainly, managed by JS */
+        }
+        
+        .crosshair {
+            width: 100%;
+            height: 100%;
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            position: relative;
+            box-shadow: 0 0 4px rgba(0,0,0,0.5);
+        }
+
+        .crosshair::before, .crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        .crosshair::before { top: 50%; left: 10%; right: 10%; height: 2px; transform: translateY(-50%); }
+        .crosshair::after { left: 50%; top: 10%; bottom: 10%; width: 2px; transform: translateX(-50%); }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Custom Cursor -->
+    <div id="cursor-layer">
+        <div class="crosshair"></div>
+    </div>
+
+    <!-- UI Layer -->
+    <div id="ui-layer">
+        <div class="hud-top" id="hud">
+            <div class="score-box">SCORE: <span id="scoreVal">0</span></div>
+            <div class="lives-box">LIVES: <span id="livesVal">3</span></div>
+        </div>
+        <div class="hud-bottom">
+            <div class="reload-msg" id="reloadMsg">RELOADING!</div>
+            <div class="ammo-container" id="ammoContainer">
+                <!-- Bullets injected by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Start Screen -->
+    <div id="startScreen" class="screen">
+        <h1>BOTTLE SHOOTER</h1>
+        <p>Smash the green bottles! Avoid the red TNT!<br>
+        Aim with mouse, click to shoot.<br>On mobile, just tap the targets.</p>
+        <button id="startBtn">PLAY NOW</button>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameOverScreen" class="screen hidden">
+        <h1>GAME OVER</h1>
+        <p>Final Score: <span id="finalScore" style="color:var(--accent); font-weight:bold;">0</span></p>
+        <button id="restartBtn">TRY AGAIN</button>
+    </div>
+
+    <script>
+        /** * Game Configuration & State 
+         */
+        const config = {
+            gravity: 0.15,
+            bottleSpawnRate: 60, // frames
+            maxLives: 5,
+            maxAmmo: 6,
+            reloadTime: 1500, // ms
+            colors: {
+                glass: ['#4caf50', '#81c784', '#a5d6a7'],
+                brownGlass: ['#795548', '#a1887f', '#d7ccc8'],
+                tnt: ['#f44336', '#e57373', '#ffcdd2']
+            }
+        };
+
+        const state = {
+            isPlaying: false,
+            score: 0,
+            lives: config.maxLives,
+            ammo: config.maxAmmo,
+            isReloading: false,
+            lastTime: 0,
+            spawnTimer: 0,
+            difficultyMultiplier: 1.0
+        };
+
+        /** * Audio System (Synthesized)
+         * Using AudioContext to generate sounds without external assets
+         */
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playSound(type) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            const now = audioCtx.currentTime;
+
+            if (type === 'shoot') {
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(150, now);
+                osc.frequency.exponentialRampToValueAtTime(0.01, now + 0.15);
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+                osc.start(now);
+                osc.stop(now + 0.15);
+            } else if (type === 'shatter') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(800, now);
+                osc.frequency.linearRampToValueAtTime(100, now + 0.1);
+                // Noise simulation via rapid freq modulation would be better but simple saw is ok for arcade
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.start(now);
+                osc.stop(now + 0.1);
+            } else if (type === 'empty') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(800, now);
+                gain.gain.setValueAtTime(0.1, now);
+                gain.gain.linearRampToValueAtTime(0, now + 0.05);
+                osc.start(now);
+                osc.stop(now + 0.05);
+            } else if (type === 'reload') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.linearRampToValueAtTime(600, now + 0.2);
+                gain.gain.setValueAtTime(0.1, now);
+                gain.gain.linearRampToValueAtTime(0, now + 0.3);
+                osc.start(now);
+                osc.stop(now + 0.3);
+            } else if (type === 'explosion') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(100, now);
+                osc.frequency.exponentialRampToValueAtTime(0.01, now + 0.5);
+                gain.gain.setValueAtTime(0.5, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+                osc.start(now);
+                osc.stop(now + 0.5);
+            }
+        }
+
+        /**
+         * Canvas Setup
+         */
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Mouse tracking
+        const mouse = { x: width/2, y: height/2 };
+        const cursorEl = document.getElementById('cursor-layer');
+        const isTouch = 'ontouchstart' in window;
+
+        if (!isTouch) {
+            cursorEl.style.display = 'block';
+            window.addEventListener('mousemove', e => {
+                mouse.x = e.clientX;
+                mouse.y = e.clientY;
+                cursorEl.style.left = mouse.x + 'px';
+                cursorEl.style.top = mouse.y + 'px';
+            });
+        }
+
+        /**
+         * Game Objects
+         */
+        class Particle {
+            constructor(x, y, color, speedMultiplier = 1) {
+                this.x = x;
+                this.y = y;
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 5 * speedMultiplier;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.alpha = 1;
+                this.color = color;
+                this.size = Math.random() * 4 + 2;
+                this.decay = Math.random() * 0.02 + 0.01;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += config.gravity; // Particles fall
+                this.alpha -= this.decay;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.rect(this.x, this.y, this.size, this.size);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        class FloatingText {
+            constructor(x, y, text, color) {
+                this.x = x;
+                this.y = y;
+                this.text = text;
+                this.color = color;
+                this.vy = -2;
+                this.alpha = 1;
+                this.life = 60;
+            }
+
+            update() {
+                this.y += this.vy;
+                this.life--;
+                if (this.life < 20) this.alpha = this.life / 20;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+                ctx.font = "bold 24px Bangers";
+                ctx.fillStyle = this.color;
+                ctx.strokeStyle = "black";
+                ctx.lineWidth = 3;
+                ctx.textAlign = "center";
+                ctx.strokeText(this.text, this.x, this.y);
+                ctx.fillText(this.text, this.x, this.y);
+                ctx.restore();
+            }
+        }
+
+        class Bottle {
+            constructor() {
+                this.width = 40;
+                this.height = 80;
+                // Spawn at bottom with randomness
+                this.x = Math.random() * (width - 100) + 50;
+                this.y = height + this.height;
+                
+                // Physics to throw it towards center-ish
+                const targetX = width/2 + (Math.random() - 0.5) * (width/2);
+                const flightTime = 120; // frames roughly
+                this.vx = (targetX - this.x) / flightTime;
+                
+                // Throw height varies
+                const throwHeight = height * (0.4 + Math.random() * 0.4); 
+                // v^2 = u^2 + 2as -> u = sqrt(2gh)
+                this.vy = -Math.sqrt(2 * (config.gravity * 0.5) * throwHeight) - 2; // Extra push
+
+                this.angle = 0;
+                this.vAngle = (Math.random() - 0.5) * 0.1;
+                
+                // Type: 0 = Green (Normal), 1 = Brown (Points), 2 = TNT (Bad)
+                const rand = Math.random();
+                if (rand < 0.15) this.type = 2; // TNT
+                else if (rand < 0.4) this.type = 1; // Brown
+                else this.type = 0; // Green
+
+                this.colorSet = this.type === 2 ? config.colors.tnt : (this.type === 1 ? config.colors.brownGlass : config.colors.glass);
+                this.markedForDeletion = false;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += config.gravity * 0.8; // Bottles float a bit
+                this.angle += this.vAngle;
+
+                // Check if fell off screen
+                if (this.y > height + 100) {
+                    this.markedForDeletion = true;
+                    if (this.type !== 2) {
+                        // Lost a bottle
+                        updateLives(-1);
+                    }
+                }
+            }
+
+            checkHit(tx, ty) {
+                // Simple box rotation check is hard, let's just do radius check for simplicity
+                // Map screen click to bottle local space
+                const center = { x: this.x, y: this.y };
+                const dist = Math.hypot(tx - center.x, ty - center.y);
+                return dist < 45; // Approximate radius
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+
+                // Draw Bottle Shape
+                const c = this.colorSet;
+                
+                // Body
+                ctx.fillStyle = c[0];
+                ctx.beginPath();
+                ctx.roundRect(-20, -10, 40, 60, 5);
+                ctx.fill();
+                
+                // Neck
+                ctx.fillStyle = c[1];
+                ctx.beginPath();
+                ctx.rect(-10, -40, 20, 35);
+                ctx.fill();
+
+                // Cap
+                ctx.fillStyle = "#333";
+                ctx.fillRect(-12, -45, 24, 8);
+
+                // Highlights (Glass effect)
+                ctx.fillStyle = "rgba(255,255,255,0.3)";
+                ctx.beginPath();
+                ctx.moveTo(-12, -30);
+                ctx.lineTo(-12, 30);
+                ctx.lineTo(-5, 30);
+                ctx.lineTo(-5, -30);
+                ctx.fill();
+
+                // TNT Label
+                if (this.type === 2) {
+                    ctx.fillStyle = "white";
+                    ctx.fillRect(-15, 10, 30, 20);
+                    ctx.fillStyle = "red";
+                    ctx.font = "bold 14px Arial";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText("TNT", 0, 20);
+                }
+
+                ctx.restore();
+            }
+        }
+
+        // Arrays for game entities
+        let bottles = [];
+        let particles = [];
+        let floatingTexts = [];
+
+        /**
+         * Core Game Logic
+         */
+        function initGame() {
+            state.score = 0;
+            state.lives = config.maxLives;
+            state.ammo = config.maxAmmo;
+            state.isReloading = false;
+            state.difficultyMultiplier = 1;
+            bottles = [];
+            particles = [];
+            floatingTexts = [];
+            
+            updateHUD();
+            updateAmmoDisplay();
+            
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('gameOverScreen').classList.add('hidden');
+            document.getElementById('hud').classList.remove('hidden');
+            
+            state.isPlaying = true;
+            loop();
+        }
+
+        function gameOver() {
+            state.isPlaying = false;
+            document.getElementById('finalScore').innerText = state.score;
+            document.getElementById('gameOverScreen').classList.remove('hidden');
+            document.getElementById('hud').classList.add('hidden');
+        }
+
+        function updateLives(amount) {
+            state.lives += amount;
+            if (state.lives <= 0) {
+                state.lives = 0;
+                gameOver();
+            }
+            updateHUD();
+        }
+
+        function updateScore(amount) {
+            state.score += amount;
+            // Increase difficulty slightly every 500 points
+            state.difficultyMultiplier = 1 + Math.floor(state.score / 500) * 0.1;
+            updateHUD();
+        }
+
+        function updateHUD() {
+            document.getElementById('scoreVal').innerText = state.score;
+            document.getElementById('livesVal').innerText = state.lives;
+        }
+
+        function updateAmmoDisplay() {
+            const container = document.getElementById('ammoContainer');
+            container.innerHTML = '';
+            for (let i = 0; i < config.maxAmmo; i++) {
+                const bullet = document.createElement('div');
+                bullet.className = 'bullet' + (i >= state.ammo ? ' spent' : '');
+                container.appendChild(bullet);
+            }
+        }
+
+        function reload() {
+            if (state.isReloading || state.ammo === config.maxAmmo) return;
+            state.isReloading = true;
+            document.getElementById('reloadMsg').style.display = 'block';
+            playSound('reload');
+
+            setTimeout(() => {
+                state.ammo = config.maxAmmo;
+                state.isReloading = false;
+                document.getElementById('reloadMsg').style.display = 'none';
+                updateAmmoDisplay();
+            }, config.reloadTime);
+        }
+
+        function spawnBottle() {
+            bottles.push(new Bottle());
+        }
+
+        function createExplosion(x, y, colorSet, isTNT) {
+            const count = isTNT ? 40 : 15;
+            const speed = isTNT ? 3 : 1;
+            
+            // Glass shards
+            for(let i=0; i<count; i++) {
+                const c = colorSet[Math.floor(Math.random()*colorSet.length)];
+                particles.push(new Particle(x, y, c, speed));
+            }
+            // Smoke/Fire for TNT
+            if (isTNT) {
+                for(let i=0; i<20; i++) {
+                    particles.push(new Particle(x, y, i%2===0?'#ff9800':'#212121', 2));
+                }
+            }
+        }
+
+        function shoot(x, y) {
+            if (!state.isPlaying) return;
+
+            if (state.isReloading) {
+                playSound('empty');
+                return;
+            }
+
+            if (state.ammo <= 0) {
+                playSound('empty');
+                reload();
+                return;
+            }
+
+            state.ammo--;
+            updateAmmoDisplay();
+            playSound('shoot');
+
+            // Recoil effect on cursor
+            if(cursorEl) {
+                cursorEl.style.transform = `translate(-50%, -50%) scale(1.4)`;
+                setTimeout(() => cursorEl.style.transform = `translate(-50%, -50%) scale(1)`, 50);
+            }
+
+            // Muzzle flash particle
+            particles.push(new Particle(x, y, '#ffff00', 0)); 
+
+            let hit = false;
+            // Iterate backwards to hit top bottles first
+            for (let i = bottles.length - 1; i >= 0; i--) {
+                const b = bottles[i];
+                if (b.checkHit(x, y)) {
+                    // Hit!
+                    b.markedForDeletion = true;
+                    
+                    if (b.type === 2) {
+                        // TNT
+                        playSound('explosion');
+                        createExplosion(b.x, b.y, b.colorSet, true);
+                        updateLives(-2);
+                        floatingTexts.push(new FloatingText(b.x, b.y, "-2 LIVES!", "red"));
+                        
+                        // Screen shake
+                        const shake = setInterval(() => {
+                            const dx = (Math.random()-0.5)*20;
+                            const dy = (Math.random()-0.5)*20;
+                            canvas.style.transform = `translate(${dx}px, ${dy}px)`;
+                        }, 16);
+                        setTimeout(() => {
+                            clearInterval(shake);
+                            canvas.style.transform = 'none';
+                        }, 300);
+
+                    } else {
+                        // Normal
+                        playSound('shatter');
+                        createExplosion(b.x, b.y, b.colorSet, false);
+                        const pts = b.type === 1 ? 50 : 10;
+                        updateScore(pts);
+                        floatingTexts.push(new FloatingText(b.x, b.y, "+" + pts, "#ffeb3b"));
+                    }
+                    
+                    hit = true;
+                    break; // Only one bottle per bullet
+                }
+            }
+
+            if (state.ammo === 0) {
+                setTimeout(reload, 200);
+            }
+        }
+
+        /**
+         * Main Loop
+         */
+        function loop() {
+            if (!state.isPlaying) return;
+
+            // Clear Canvas
+            ctx.fillStyle = '#222';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw Background (Shelves look)
+            ctx.fillStyle = '#3e2723';
+            ctx.fillRect(0, height * 0.8, width, height*0.2); // Ground
+
+            // Update Spawner
+            state.spawnTimer++;
+            const currentSpawnRate = Math.max(20, config.bottleSpawnRate - (state.difficultyMultiplier * 5));
+            if (state.spawnTimer > currentSpawnRate) {
+                spawnBottle();
+                state.spawnTimer = 0;
+            }
+
+            // Update & Draw Bottles
+            bottles.forEach(b => {
+                b.update();
+                b.draw(ctx);
+            });
+
+            // Update & Draw Particles
+            particles.forEach(p => {
+                p.update();
+                p.draw(ctx);
+            });
+
+            // Update & Draw Floating Text
+            floatingTexts.forEach(t => {
+                t.update();
+                t.draw(ctx);
+            });
+
+            // Cleanup
+            bottles = bottles.filter(b => !b.markedForDeletion);
+            particles = particles.filter(p => p.alpha > 0);
+            floatingTexts = floatingTexts.filter(t => t.life > 0);
+
+            requestAnimationFrame(loop);
+        }
+
+        /**
+         * Input Event Listeners
+         */
+        window.addEventListener('mousedown', (e) => {
+            if (e.target.tagName !== 'BUTTON') {
+                shoot(e.clientX, e.clientY);
+            }
+        });
+
+        // Touch support
+        window.addEventListener('touchstart', (e) => {
+            if (e.target.tagName !== 'BUTTON') {
+                const touch = e.touches[0];
+                shoot(touch.clientX, touch.clientY);
+            }
+        }, {passive: false});
+
+        document.getElementById('startBtn').addEventListener('click', initGame);
+        document.getElementById('restartBtn').addEventListener('click', initGame);
+
+    </script>
+</body>
+</html>
+
